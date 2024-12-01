@@ -1,0 +1,41 @@
+<app-header></app-header>
+<main infiniteScroll 
+       [infiniteScrollDistance]="scrollDistance" 
+       [infiniteScrollUpDistance]="scrollUpDistance"
+       (scrolled)="onScroll()">
+  <section *ngFor="let post of posts" class="post">
+    <h2>{{ post.content }}</h2>
+
+    <!-- Render text post -->
+    <div *ngIf="post.type === 'text'">
+      <p>{{ post.content }}</p>
+    </div>
+
+    <!-- Render photo album with lazy-loaded images -->
+    <div *ngIf="post.type === 'photoAlbum'">
+      <div class="photo-album">
+        <div *ngFor="let url of post.mediaUrls">
+          <img [defaultImage]="'/assets/default-placeholder.png'" 
+               [lazyLoad]="url" alt="Photo post" class="post-media">
+        </div>
+      </div>
+    </div>
+
+    <!-- Render video post with lazy loading -->
+    <div *ngIf="post.type === 'video'">
+      <iframe [src]="post.videoUrl" width="100%" height="300px" frameborder="0" loading="lazy"></iframe>
+    </div>
+
+    <p><small>Posted on {{ post.createdAt | date: 'medium' }}</small></p>
+  </section>
+
+  <!-- Loading spinner for when more posts are being fetched -->
+  <div *ngIf="loading" class="loading-spinner">
+    <p>Loading...</p>
+  </div>
+
+  <!-- Optionally show a message when there are no more posts -->
+  <div *ngIf="!hasMorePosts" class="no-more-posts">
+    <p>No more posts available.</p>
+  </div>
+</main>

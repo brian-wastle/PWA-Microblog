@@ -1,0 +1,22 @@
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background-color: #003366; /* Adjust color to match your theme */
+    color: white;
+  }
+  
+  button {
+    background: #e3f2fd;
+    color: #003366;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  
+    &:hover {
+      background: #d6eaf8;
+    }
+  }

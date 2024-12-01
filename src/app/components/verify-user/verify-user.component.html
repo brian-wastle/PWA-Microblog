@@ -1,0 +1,22 @@
+<div class="verify-user-container">
+    <h2>Verify Your Account</h2>
+  
+    <form [formGroup]="verifyForm" (ngSubmit)="verifyUser()" class="verify-form">
+      <div class="p-field">
+        <label for="verificationCode">Verification Code:</label>
+        <input id="verificationCode" type="text" formControlName="verificationCode" placeholder="Enter confirmation code" required />
+        <small *ngIf="verifyForm.get('verificationCode')?.invalid && (verifyForm.get('verificationCode')?.touched || verifyForm.get('verificationCode')?.dirty)" class="p-error">
+          Verification code is required and must be at least 6 characters long.
+        </small>
+      </div>
+  
+      <div class="p-field">
+        <button pButton type="submit" label="{{ loading ? 'Verifying...' : 'Verify' }}" [disabled]="verifyForm.invalid || loading"></button>
+      </div>
+  
+      <div *ngIf="errorMessage" class="p-message p-message-error">
+        <span>{{ errorMessage }}</span>
+      </div>
+    </form>
+  </div>
+  
