@@ -42,3 +42,6 @@ environments
 .DS_Store
 Thumbs.db
 todo.txt
+
+# Local Netlify folder
+.netlify
