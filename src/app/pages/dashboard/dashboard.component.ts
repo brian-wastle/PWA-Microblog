@@ -153,7 +153,6 @@ export class DashboardComponent implements OnInit {
   uploadFileToS3(signedUrl: string, file: File) {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', signedUrl, true);
-    xhr.setRequestHeader("Content-Type", file.type);
 
     // Track upload progress
     xhr.upload.onprogress = (event) => {
@@ -196,18 +195,24 @@ export class DashboardComponent implements OnInit {
       fileUrl: fileUrl,
       fileName: fileName
     };
-
-    fetch('/api/save-post', {
-      method: 'POST',
-      body: JSON.stringify(postData),
-      headers: { 'Content-Type': 'application/json' }
-    })
-      .then(response => response.json())
-      .then(data => {
-        console.log('Post saved to database:', data);
-      })
-      .catch((error) => {
-        console.error('Error saving post to database:', error);
+  
+    const apiUrl = `${environment.API_URL}/createPost`; 
+  
+    const token = this.cognitoService.getAuthToken();
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/json',
+      'Authorization': `${token}`
+    });
+  
+    // Use HttpClient to send a POST request
+    this.http.post(apiUrl, postData, { headers })
+      .subscribe({
+        next: (data) => {
+          console.log('Post saved to database:', data);
+        },
+        error: (error) => {
+          console.error('Error saving post to database:', error);
+        }
       });
   }
 }
