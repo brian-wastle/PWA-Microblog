@@ -7,7 +7,7 @@ bootstrapApplication(AppComponent, {
   ...appConfig,
   providers: [
     ...appConfig.providers,
-    { provide: LocationStrategy, useClass: PathLocationStrategy }  // Apply the PathLocationStrategy
+    { provide: LocationStrategy, useClass: PathLocationStrategy } 
   ]
 })
   .catch((err) => console.error(err));
