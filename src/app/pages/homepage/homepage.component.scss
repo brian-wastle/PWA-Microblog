@@ -43,3 +43,21 @@ main {
   color: #555;
   font-style: italic;
 }
+
+
+.photo-album {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.swiper-slide img {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.post-media {
+  width: 100%;
+  height: auto;
+}

@@ -108,8 +108,9 @@ export class DashboardComponent implements OnInit {
       const presignedUrls = await this.getPresignedURLs(files, 'photoAlbum');
       this.presignedUrls = presignedUrls;
       await Promise.all(
-        files.map((file, index) =>
+        files.map((file, index) => 
           this.uploadFileToS3(this.presignedUrls[index].signedUrl, file)
+            .then(() => this.storeFinalURL(this.presignedUrls[index].signedUrl, file))
         )
       );
       this.finalizePost();
@@ -124,6 +125,7 @@ export class DashboardComponent implements OnInit {
       const presignedUrls = await this.getPresignedURLs([file], 'video');
       this.presignedUrls = presignedUrls;
       await this.uploadFileToS3(this.presignedUrls[0].signedUrl, file);
+      this.storeFinalURL(this.presignedUrls[0].signedUrl, file);
       this.finalizePost();
     } catch (error) {
       console.error('Error during video upload:', error);
@@ -187,26 +189,19 @@ export class DashboardComponent implements OnInit {
   storeFinalURL(signedUrl: string, file: File) {
     const s3Url = signedUrl.split('?')[0]; // Remove the query parameters to get the final URL
     console.log('File URL:', s3Url);
-  
+    
     const postContent = this.postForm.get('postContent')?.value;
     const selectedPostType = this.postForm.get('selectedPostType')?.value;
   
-    switch (selectedPostType) {
-      case 'video':
-        this.savePostToDB(selectedPostType, postContent, null, s3Url);
-        break;
-      case 'photoAlbum':
-        this.savePostToDB(selectedPostType, postContent, [s3Url], null);
-        break;
-      case 'text':
-        this.savePostToDB(selectedPostType, postContent, null, null);
-        break;
-      default:
-        console.error('Unknown post type:', selectedPostType);
-        break;
-    }
+    // Directly pass the parameters to savePostToDB
+    this.savePostToDB(
+      selectedPostType, 
+      postContent, 
+      selectedPostType === 'photoAlbum' ? [s3Url] : null,  // For photoAlbum, pass an array with s3Url
+      selectedPostType === 'video' ? s3Url : null            // For video, pass s3Url as videoUrl
+    );
   }
-
+  
   savePostToDB(type: string, content: string, mediaUrls: string[] | null, videoUrl: string | null) {
     const postData = {
       type: type,
@@ -223,7 +218,6 @@ export class DashboardComponent implements OnInit {
       'Authorization': `${token}`
     });
   
-    // Use HttpClient to send a POST request
     this.http.post(apiUrl, postData, { headers })
       .subscribe({
         next: (data) => {

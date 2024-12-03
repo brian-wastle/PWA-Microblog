@@ -1,12 +1,14 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Post } from '../../models/post.model';
 import { PostService } from '../../services/post/post.service';
+import { Post } from '../../models/post.model';
 import { HeaderComponent } from '../../components/header/header.component';
 import { InfiniteScrollDirective } from 'ngx-infinite-scroll';
 import { LazyLoadImageModule } from 'ng-lazyload-image';
-import { debounceTime, Subject, catchError, of } from 'rxjs';
-
+import Swiper from 'swiper';
+import { SwiperOptions } from 'swiper/types';
+import { Subject, of } from 'rxjs';
+import { debounceTime, catchError } from 'rxjs/operators';
 
 @Component({
   selector: 'app-homepage',
@@ -15,7 +17,7 @@ import { debounceTime, Subject, catchError, of } from 'rxjs';
   styleUrls: ['./homepage.component.scss'],
   standalone: true
 })
-export class HomepageComponent implements OnInit {
+export class HomepageComponent implements OnInit, AfterViewInit {
   posts: Post[] = [];
   page: number = 1;
   loading: boolean = false;
@@ -28,14 +30,30 @@ export class HomepageComponent implements OnInit {
   constructor(private postService: PostService) {}
 
   ngOnInit(): void {
-    this.scrollSubject.pipe(debounceTime(200)).subscribe(() => this.loadPosts());
     this.loadPosts();
+  }
+
+  ngAfterViewInit(): void {
+    // Initialize Swiper after the view has been initialized
+    const swiperOptions: SwiperOptions = {
+      slidesPerView: 1,
+      spaceBetween: 10,
+      navigation: true,
+      pagination: { clickable: true },
+      loop: true
+    };
+
+    // Initialize Swiper for each swiper-container class (may be multiple)
+    const swiperContainers = document.querySelectorAll('.swiper-container');
+    swiperContainers.forEach((container) => {
+      new Swiper(container as HTMLElement, swiperOptions);
+    });
   }
 
   loadPosts(): void {
     if (this.loading || !this.hasMorePosts) return;
     this.loading = true;
-  
+
     this.postService.getPosts(this.page).pipe(
       catchError(error => {
         console.error('Error fetching posts:', error);
@@ -49,8 +67,8 @@ export class HomepageComponent implements OnInit {
       this.hasMorePosts = newPosts.length > 0;
     });
   }
-  
 
+  // onScroll function remains intact
   onScroll(): void {
     this.scrollSubject.next();
   }
