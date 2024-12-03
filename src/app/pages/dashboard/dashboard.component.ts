@@ -1,10 +1,6 @@
 import { Component, OnInit} from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { SelectButtonModule } from 'primeng/selectbutton';
-import { InputTextareaModule } from 'primeng/inputtextarea';
-import { ButtonModule } from 'primeng/button';
 import { CommonModule } from '@angular/common';
-import { ProgressBarModule } from 'primeng/progressbar';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { CognitoService } from '../../services/cognito/cognito.service';
@@ -16,10 +12,6 @@ import { firstValueFrom } from 'rxjs';
   standalone: true,
   imports: [
     CommonModule,
-    SelectButtonModule,
-    InputTextareaModule,
-    ButtonModule,
-    ProgressBarModule,
     ReactiveFormsModule
   ],
   templateUrl: './dashboard.component.html',
@@ -36,7 +28,8 @@ export class DashboardComponent implements OnInit {
   videoFile: File | null = null;
   mediaFiles: File[] = [];
   presignedUrls: any[] = [];
-  uploadProgress: { [key: string]: number } = {}; // Track progress by file name
+  uploadProgress: { [key: string]: number } = {}; 
+  loading: boolean = false;
 
   constructor(private fb: FormBuilder, private http: HttpClient, private cognitoService: CognitoService) {
     this.postForm = this.fb.group({
@@ -52,14 +45,14 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  onVideoFileSelected(event: any) {
+  onVideoSelected(event: any) {
     const file = event.target.files[0];
     if (file) {
       this.videoFile = file;
     }
   }
 
-  onMediaFilesSelected(event: any) {
+  onMediaSelected(event: any) {
     this.mediaFiles = Array.from(event.target.files);
   }
 
@@ -78,19 +71,26 @@ export class DashboardComponent implements OnInit {
 
   createPost() {
     if (this.postForm.valid) {
+      this.loading = true;
       const { selectedPostType, postContent } = this.postForm.value;
-
+  
       if (selectedPostType === 'text' && postContent.trim()) {
+        // Handle text-only post
         console.log('Creating Text Post:', postContent);
+        this.savePostToDB(selectedPostType, postContent, null, null);  // Save text post with no media
       } else if (selectedPostType === 'photoAlbum' && postContent.trim()) {
+        // Handle photo album post
         console.log('Creating Photo/Text Post:', postContent);
         if (this.mediaFiles.length > 0) {
           this.uploadMediaToS3(this.mediaFiles); // Upload photos
         }
       } else if (selectedPostType === 'video' && postContent.trim()) {
+        // Handle video post
         console.log('Creating Video/Text Post:', postContent);
         if (this.videoFile) {
-          this.uploadVideoToS3(this.videoFile); // Upload video
+          this.uploadVideoToS3(this.videoFile);
+        } else {
+          this.finalizePost();
         }
       }
     } else {
@@ -98,102 +98,121 @@ export class DashboardComponent implements OnInit {
     }
   }
 
-  // Upload media (photos or video) to S3
-  uploadMediaToS3(files: File[]) {
-    this.getPresignedUrlsFromBackend(files, 'photoAlbum')
-      .then((presignedUrls) => {
-        this.presignedUrls = presignedUrls;
-        files.forEach((file, index) => {
-          this.uploadFileToS3(this.presignedUrls[index].signedUrl, file);
-        });
-      })
-      .catch((error) => {
-        console.error('Error getting presigned URLs:', error);
-      });
+  finalizePost() {
+    this.loading = false;
+    console.log('Post creation finalized.');
   }
 
-  uploadVideoToS3(file: File) {
-    this.getPresignedUrlsFromBackend([file], 'video')
-      .then((presignedUrls) => {
-        this.presignedUrls = presignedUrls;
-        this.uploadFileToS3(this.presignedUrls[0].signedUrl, file);
-      })
-      .catch((error) => {
-        console.error('Error getting presigned URLs:', error);
-      });
+  async uploadMediaToS3(files: File[]) {
+    try {
+      const presignedUrls = await this.getPresignedURLs(files, 'photoAlbum');
+      this.presignedUrls = presignedUrls;
+      await Promise.all(
+        files.map((file, index) =>
+          this.uploadFileToS3(this.presignedUrls[index].signedUrl, file)
+        )
+      );
+      this.finalizePost();
+    } catch (error) {
+      console.error('Error during media upload:', error);
+      this.loading = false;
+    }
   }
 
-  // Get presigned URLs from backend
-  async getPresignedUrlsFromBackend(files: File[], postType: string): Promise<any[]> {
+  async uploadVideoToS3(file: File) {
+    try {
+      const presignedUrls = await this.getPresignedURLs([file], 'video');
+      this.presignedUrls = presignedUrls;
+      await this.uploadFileToS3(this.presignedUrls[0].signedUrl, file);
+      this.finalizePost();
+    } catch (error) {
+      console.error('Error during video upload:', error);
+      this.loading = false;
+    }
+  }
+
+  async getPresignedURLs(files: File[], postType: string): Promise<any[]> {
     const fileNames = files.map(file => file.name);
-  
-    // Prepare the body of the request
     const body = {
       type: postType,
       content: this.postForm.get('postContent')?.value,
       mediaFiles: fileNames,
       videoFile: postType === 'video' ? files[0] : null
     };
-  
-    try {
-      const token = this.cognitoService.getAuthToken();
-      const headers = new HttpHeaders({
-        'Content-Type': 'application/json',
-        'Authorization': `${token}`
-      });
-      const response: any = await firstValueFrom(this.http.post<any>(`${environment.API_URL}/getPresignedURLs`, body, { headers }));
-      return response.presignedUrls;
-    } catch (error) {
-      console.error('Error getting presigned URLs:', error);
-      throw error;
-    }
+
+    const token = this.cognitoService.getAuthToken();
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/json',
+      'Authorization': `${token}`
+    });
+
+    const response: any = await firstValueFrom(
+      this.http.post<any>(`${environment.API_URL}/getPresignedURLs`, body, { headers })
+    );
+    return response.presignedUrls;
   }
   
-  // Upload file to S3 using the presigned URL and track progress
-  uploadFileToS3(signedUrl: string, file: File) {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', signedUrl, true);
+  // Upload file with presigned URL and track with .onprogress
+  uploadFileToS3(signedUrl: string, file: File): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', signedUrl, true);
 
-    // Track upload progress
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const progress = Math.round((event.loaded / event.total) * 100);
-        this.uploadProgress[file.name] = progress;
-      }
-    };
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          this.uploadProgress[file.name] = progress;
+        }
+      };
 
-    // Handle completion
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        console.log(`${file.name} uploaded successfully`);
-        // Capture the S3 URL once the upload is complete
-        this.captureFileUrl(signedUrl, file);
-      } else {
-        console.error(`Failed to upload ${file.name}`);
-      }
-    };
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          console.log(`${file.name} uploaded successfully`);
+          resolve();
+        } else {
+          console.error(`Failed to upload ${file.name}`);
+          reject();
+        }
+      };
 
-    // Handle error
-    xhr.onerror = () => {
-      console.error(`Error uploading ${file.name}`);
-    };
+      xhr.onerror = () => {
+        console.error(`Error uploading ${file.name}`);
+        reject();
+      };
 
-    xhr.send(file);
+      xhr.send(file);
+    });
   }
 
-  // Capture the uploaded file URL after upload is complete
-  captureFileUrl(signedUrl: string, file: File) {
+  storeFinalURL(signedUrl: string, file: File) {
     const s3Url = signedUrl.split('?')[0]; // Remove the query parameters to get the final URL
     console.log('File URL:', s3Url);
-    this.savePostToDatabase(s3Url, file.name);
+  
+    const postContent = this.postForm.get('postContent')?.value;
+    const selectedPostType = this.postForm.get('selectedPostType')?.value;
+  
+    switch (selectedPostType) {
+      case 'video':
+        this.savePostToDB(selectedPostType, postContent, null, s3Url);
+        break;
+      case 'photoAlbum':
+        this.savePostToDB(selectedPostType, postContent, [s3Url], null);
+        break;
+      case 'text':
+        this.savePostToDB(selectedPostType, postContent, null, null);
+        break;
+      default:
+        console.error('Unknown post type:', selectedPostType);
+        break;
+    }
   }
 
-  // Save the post to the PostgreSQL database
-  savePostToDatabase(fileUrl: string, fileName: string) {
+  savePostToDB(type: string, content: string, mediaUrls: string[] | null, videoUrl: string | null) {
     const postData = {
-      content: this.postForm.get('postContent')?.value,
-      fileUrl: fileUrl,
-      fileName: fileName
+      type: type,
+      content: content,
+      mediaUrls: mediaUrls,
+      videoUrl: videoUrl
     };
   
     const apiUrl = `${environment.API_URL}/createPost`; 
@@ -209,10 +228,13 @@ export class DashboardComponent implements OnInit {
       .subscribe({
         next: (data) => {
           console.log('Post saved to database:', data);
+          this.finalizePost();
         },
         error: (error) => {
           console.error('Error saving post to database:', error);
+          this.loading = false;
         }
       });
   }
+  
 }

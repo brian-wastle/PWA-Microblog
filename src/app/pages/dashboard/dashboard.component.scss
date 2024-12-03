@@ -15,9 +15,18 @@ p {
     margin-bottom: 10px;
 }
 
-p-selectButton,
-p-inputTextarea,
-p-button {
+.progress-bar {
     width: 100%;
-    margin-bottom: 20px;
-}
+    background-color: #e0e0e0;
+    border-radius: 5px;
+    overflow: hidden;
+    height: 20px;
+    margin-top: 5px;
+  }
+  
+  .progress-bar-fill {
+    height: 100%;
+    background-color: #4caf50;
+    transition: width 0.4s ease;
+  }
+  
