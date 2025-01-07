@@ -1,4 +1,4 @@
-import { Component, OnInit} from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
@@ -28,7 +28,7 @@ export class DashboardComponent implements OnInit {
   videoFile: File | null = null;
   mediaFiles: File[] = [];
   presignedUrls: any[] = [];
-  uploadProgress: { [key: string]: number } = {}; 
+  uploadProgress: { [key: string]: number } = {};
   loading: boolean = false;
 
   constructor(private fb: FormBuilder, private http: HttpClient, private cognitoService: CognitoService) {
@@ -40,7 +40,7 @@ export class DashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.postForm = this.fb.group({
-      selectedPostType: ['text', Validators.required], 
+      selectedPostType: ['text', Validators.required],
       postContent: ['', Validators.required]
     });
   }
@@ -73,7 +73,7 @@ export class DashboardComponent implements OnInit {
     if (this.postForm.valid) {
       this.loading = true;
       const { selectedPostType, postContent } = this.postForm.value;
-  
+
       if (selectedPostType === 'text' && postContent.trim()) {
         // Handle text-only post
         console.log('Creating Text Post:', postContent);
@@ -107,11 +107,14 @@ export class DashboardComponent implements OnInit {
     try {
       const presignedUrls = await this.getPresignedURLs(files, 'photoAlbum');
       this.presignedUrls = presignedUrls;
+      console.log('Presigned URLs:', presignedUrls);
       await Promise.all(
-        files.map((file, index) => 
+        files.map((file, index) => {
+          console.log('File to upload:', file.name, file.type);
+          console.log('Presigned URL:', this.presignedUrls[index].signedUrl);
           this.uploadFileToS3(this.presignedUrls[index].signedUrl, file)
             .then(() => this.storeFinalURL(this.presignedUrls[index].signedUrl, file))
-        )
+        })
       );
       this.finalizePost();
     } catch (error) {
@@ -153,7 +156,7 @@ export class DashboardComponent implements OnInit {
     );
     return response.presignedUrls;
   }
-  
+
   // Upload file with presigned URL and track with .onprogress
   uploadFileToS3(signedUrl: string, file: File): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -189,19 +192,19 @@ export class DashboardComponent implements OnInit {
   storeFinalURL(signedUrl: string, file: File) {
     const s3Url = signedUrl.split('?')[0]; // Remove the query parameters to get the final URL
     console.log('File URL:', s3Url);
-    
+
     const postContent = this.postForm.get('postContent')?.value;
     const selectedPostType = this.postForm.get('selectedPostType')?.value;
-  
+
     // Directly pass the parameters to savePostToDB
     this.savePostToDB(
-      selectedPostType, 
-      postContent, 
+      selectedPostType,
+      postContent,
       selectedPostType === 'photoAlbum' ? [s3Url] : null,  // For photoAlbum, pass an array with s3Url
       selectedPostType === 'video' ? s3Url : null            // For video, pass s3Url as videoUrl
     );
   }
-  
+
   savePostToDB(type: string, content: string, mediaUrls: string[] | null, videoUrl: string | null) {
     const postData = {
       type: type,
@@ -209,15 +212,15 @@ export class DashboardComponent implements OnInit {
       mediaUrls: mediaUrls,
       videoUrl: videoUrl
     };
-  
-    const apiUrl = `${environment.API_URL}/createPost`; 
-  
+
+    const apiUrl = `${environment.API_URL}/createPost`;
+
     const token = this.cognitoService.getAuthToken();
     const headers = new HttpHeaders({
       'Content-Type': 'application/json',
       'Authorization': `${token}`
     });
-  
+
     this.http.post(apiUrl, postData, { headers })
       .subscribe({
         next: (data) => {
@@ -230,5 +233,5 @@ export class DashboardComponent implements OnInit {
         }
       });
   }
-  
+
 }
