@@ -10,16 +10,20 @@ import { environment } from '../../../environments/environment';
 export class PostService {
   private apiUrl = `${environment.API_URL}/viewPosts`;
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) { }
 
-  getPosts(lastCreatedAt?: string): Observable<Post[]> {
-    let params = new HttpParams().set('limit', '10');
-
+  getPosts(lastCreatedAt?: string | Date): Observable<Post[]> {
+    let params = new HttpParams();
+    
     if (lastCreatedAt) {
-      params = params.set('lastCreatedAt', lastCreatedAt);
+      // Convert Date to formatted string if necessary
+      const formattedDate = lastCreatedAt instanceof Date
+        ? lastCreatedAt.toISOString().replace('T', ' ').replace('Z', '').slice(0, 26)
+        : lastCreatedAt.replace('T', ' ').replace('Z', '').slice(0, 26);
+  
+      params = params.set('lastCreatedAt', formattedDate);
     }
-
+  
     return this.http.get<Post[]>(this.apiUrl, { params });
   }
 }
-``

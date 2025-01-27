@@ -6,7 +6,6 @@ import { environment } from '../../../environments/environment';
 import { CognitoService } from '../../services/cognito/cognito.service';
 import { firstValueFrom } from 'rxjs';
 
-
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -17,21 +16,24 @@ import { firstValueFrom } from 'rxjs';
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
-
 export class DashboardComponent implements OnInit {
-  postTypes: any[] = [
+  postTypes = [
     { label: 'Text Post', value: 'text' },
     { label: 'Photo/Text Post', value: 'photoAlbum' },
     { label: 'Video/Text Post', value: 'video' }
   ];
   postForm: FormGroup;
-  videoFile: File | null = null;
-  mediaFiles: File[] = [];
+  videoFile: File | null = null;    // For single video
+  mediaFiles: File[] = [];          // For multiple photos
   presignedUrls: any[] = [];
   uploadProgress: { [key: string]: number } = {};
-  loading: boolean = false;
+  loading = false;
 
-  constructor(private fb: FormBuilder, private http: HttpClient, private cognitoService: CognitoService) {
+  constructor(
+    private fb: FormBuilder,
+    private http: HttpClient,
+    private cognitoService: CognitoService
+  ) {
     this.postForm = this.fb.group({
       selectedPostType: ['text', Validators.required],
       postContent: ['', Validators.required]
@@ -39,11 +41,10 @@ export class DashboardComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.postForm = this.fb.group({
-      selectedPostType: ['text', Validators.required],
-      postContent: ['', Validators.required]
-    });
+    // Re-initialize or add additional logic if needed
   }
+
+  // EVENT HANDLERS
 
   onVideoSelected(event: any) {
     const file = event.target.files[0];
@@ -62,40 +63,74 @@ export class DashboardComponent implements OnInit {
     inputFile.accept = 'image/*';
     inputFile.multiple = true;
     inputFile.click();
-    inputFile.onchange = (event) => {
+    inputFile.onchange = () => {
       if (inputFile.files) {
         this.mediaFiles.push(...Array.from(inputFile.files));
       }
     };
   }
 
-  createPost() {
-    if (this.postForm.valid) {
-      this.loading = true;
-      const { selectedPostType, postContent } = this.postForm.value;
 
-      if (selectedPostType === 'text' && postContent.trim()) {
-        // Handle text-only post
-        console.log('Creating Text Post:', postContent);
-        this.savePostToDB(selectedPostType, postContent, null, null);  // Save text post with no media
-      } else if (selectedPostType === 'photoAlbum' && postContent.trim()) {
-        // Handle photo album post
-        console.log('Creating Photo/Text Post:', postContent);
-        if (this.mediaFiles.length > 0) {
-          this.uploadMediaToS3(this.mediaFiles); // Upload photos
-        }
-      } else if (selectedPostType === 'video' && postContent.trim()) {
-        // Handle video post
-        console.log('Creating Video/Text Post:', postContent);
-        if (this.videoFile) {
-          this.uploadVideoToS3(this.videoFile);
-        } else {
-          this.finalizePost();
+  // POST CREATION
+
+  async createPost() {
+    if (this.postForm.invalid) {
+      console.error('Form is invalid. Please fill out all required fields.');
+      return;
+    }
+
+    this.loading = true;
+    const { selectedPostType, postContent } = this.postForm.value;
+
+    // TEXT POST
+    if (selectedPostType === 'text' && postContent.trim()) {
+      console.log('Creating Text Post:', postContent);
+      // No files needed, just save
+      this.savePostToDB('text', postContent, null, null);
+      return;
+    }
+
+    // PHOTO POST
+    if (selectedPostType === 'photoAlbum' && postContent.trim()) {
+      if (this.mediaFiles.length === 0) {
+        // If no photos selected, treat as text or throw an error
+        console.warn('No photos selected—saving as text only or handle accordingly');
+        this.savePostToDB('photoAlbum', postContent, [], null);
+      } else {
+        // Upload multiple photos
+        try {
+          const uploadedUrls = await this.uploadFilesToS3('photoAlbum', this.mediaFiles);
+          this.savePostToDB('photoAlbum', postContent, uploadedUrls, null);
+        } catch (err) {
+          console.error('Error uploading photos:', err);
+          this.loading = false;
         }
       }
-    } else {
-      console.error('Form is invalid. Please fill out all required fields.');
+      return;
     }
+
+    // VIDEO POST
+    if (selectedPostType === 'video' && postContent.trim()) {
+      if (!this.videoFile) {
+        console.warn('No video selected—saving as text only or handle accordingly');
+        this.savePostToDB('video', postContent, null, null);
+      } else {
+        // Upload single video
+        try {
+          const uploadedUrls = await this.uploadFilesToS3('video', [this.videoFile]);
+          // We only have 1 URL in the array, so pass it as videoUrl
+          this.savePostToDB('video', postContent, null, uploadedUrls[0]);
+        } catch (err) {
+          console.error('Error uploading video:', err);
+          this.loading = false;
+        }
+      }
+      return;
+    }
+
+    // If we get here, something is off
+    console.error('Invalid post content or type');
+    this.loading = false;
   }
 
   finalizePost() {
@@ -103,40 +138,34 @@ export class DashboardComponent implements OnInit {
     console.log('Post creation finalized.');
   }
 
-  async uploadMediaToS3(files: File[]) {
-    try {
-      const presignedUrls = await this.getPresignedURLs(files, 'photoAlbum');
-      this.presignedUrls = presignedUrls;
-      console.log('Presigned URLs:', presignedUrls);
-      await Promise.all(
-        files.map((file, index) => {
-          console.log('File to upload:', file.name, file.type);
-          console.log('Presigned URL:', this.presignedUrls[index].signedUrl);
-          this.uploadFileToS3(this.presignedUrls[index].signedUrl, file)
-            .then(() => this.storeFinalURL(this.presignedUrls[index].signedUrl, file))
-        })
-      );
-      this.finalizePost();
-    } catch (error) {
-      console.error('Error during media upload:', error);
-      this.loading = false;
-    }
+
+  // S3 UPLOAD
+
+  private async uploadFilesToS3(postType: 'photoAlbum' | 'video', files: File[]): Promise<string[]> {
+    // 1) Get presigned URLs from the backend
+    const presignedUrls = await this.getPresignedURLs(files, postType);
+    this.presignedUrls = presignedUrls;
+
+    // 2) Upload each file
+    const uploadedUrls: string[] = [];
+    await Promise.all(
+      files.map((file, index) => {
+        const { signedUrl } = presignedUrls[index];
+        return this.uploadFileToS3(signedUrl, file).then(() => {
+          const s3Url = signedUrl.split('?')[0];
+          uploadedUrls.push(s3Url);
+          console.log(`File uploaded: ${file.name} => ${s3Url}`);
+        });
+      })
+    );
+
+    return uploadedUrls;
   }
 
-  async uploadVideoToS3(file: File) {
-    try {
-      const presignedUrls = await this.getPresignedURLs([file], 'video');
-      this.presignedUrls = presignedUrls;
-      await this.uploadFileToS3(this.presignedUrls[0].signedUrl, file);
-      this.storeFinalURL(this.presignedUrls[0].signedUrl, file);
-      this.finalizePost();
-    } catch (error) {
-      console.error('Error during video upload:', error);
-      this.loading = false;
-    }
-  }
 
-  async getPresignedURLs(files: File[], postType: string): Promise<any[]> {
+  // PRESIGNED URLs
+
+  private async getPresignedURLs(files: File[], postType: string): Promise<any[]> {
     const fileNames = files.map(file => file.name);
     const body = {
       type: postType,
@@ -157,8 +186,10 @@ export class DashboardComponent implements OnInit {
     return response.presignedUrls;
   }
 
-  // Upload file with presigned URL and track with .onprogress
-  uploadFileToS3(signedUrl: string, file: File): Promise<void> {
+
+  // UPLOAD HELPER
+
+  private uploadFileToS3(signedUrl: string, file: File): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', signedUrl, true);
@@ -176,45 +207,36 @@ export class DashboardComponent implements OnInit {
           resolve();
         } else {
           console.error(`Failed to upload ${file.name}`);
-          reject();
+          reject(`Failed to upload ${file.name}, status: ${xhr.status}`);
         }
       };
 
       xhr.onerror = () => {
         console.error(`Error uploading ${file.name}`);
-        reject();
+        reject(`XHR error uploading ${file.name}`);
       };
 
       xhr.send(file);
     });
   }
 
-  storeFinalURL(signedUrl: string, file: File) {
-    const s3Url = signedUrl.split('?')[0]; // Remove the query parameters to get the final URL
-    console.log('File URL:', s3Url);
 
-    const postContent = this.postForm.get('postContent')?.value;
-    const selectedPostType = this.postForm.get('selectedPostType')?.value;
+  // DB HELPER
 
-    // Directly pass the parameters to savePostToDB
-    this.savePostToDB(
-      selectedPostType,
-      postContent,
-      selectedPostType === 'photoAlbum' ? [s3Url] : null,  // For photoAlbum, pass an array with s3Url
-      selectedPostType === 'video' ? s3Url : null            // For video, pass s3Url as videoUrl
-    );
-  }
-
-  savePostToDB(type: string, content: string, mediaUrls: string[] | null, videoUrl: string | null) {
+  private savePostToDB(
+    type: string,
+    content: string,
+    mediaUrls: string[] | null,
+    videoUrl: string | null
+  ) {
     const postData = {
-      type: type,
-      content: content,
-      mediaUrls: mediaUrls,
-      videoUrl: videoUrl
+      type,
+      content,
+      mediaUrls,
+      videoUrl
     };
 
     const apiUrl = `${environment.API_URL}/createPost`;
-
     const token = this.cognitoService.getAuthToken();
     const headers = new HttpHeaders({
       'Content-Type': 'application/json',
@@ -233,5 +255,4 @@ export class DashboardComponent implements OnInit {
         }
       });
   }
-
 }

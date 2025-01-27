@@ -1,5 +1,3 @@
-<app-header></app-header>
-
 <main
   infiniteScroll
   [infiniteScrollDistance]="scrollDistance"
@@ -30,7 +28,6 @@
               class="swiper-slide"
             >
               <img
-                [defaultImage]="'/assets/default-placeholder.png'"
                 [lazyLoad]="url"
                 alt="Photo post"
                 class="post-media"
@@ -62,7 +59,7 @@
 
     <!-- Post creation date -->
     <p>
-      <small>Posted on {{ post.createdAt | date: 'medium' }}</small>
+      <small>Posted on {{ post.createdAt }}</small>
     </p>
   </section>
 

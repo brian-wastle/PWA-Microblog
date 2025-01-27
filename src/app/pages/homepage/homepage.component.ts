@@ -1,80 +1,95 @@
-import { Component, OnInit, AfterViewInit } from '@angular/core';
+import { Component, OnInit, AfterViewChecked, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { PostService } from '../../services/post/post.service';
 import { Post } from '../../models/post.model';
-import { HeaderComponent } from '../../components/header/header.component';
 import { InfiniteScrollDirective } from 'ngx-infinite-scroll';
 import { LazyLoadImageModule } from 'ng-lazyload-image';
 import Swiper from 'swiper';
-import { SwiperOptions } from 'swiper/types';
-import { Subject, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
-
-
-
 
 @Component({
   selector: 'app-homepage',
-  imports: [CommonModule, InfiniteScrollDirective, LazyLoadImageModule, HeaderComponent],
+  imports: [CommonModule, InfiniteScrollDirective, LazyLoadImageModule],
   templateUrl: './homepage.component.html',
   styleUrls: ['./homepage.component.scss'],
   standalone: true
 })
 
-export class HomepageComponent implements OnInit, AfterViewInit {
+export class HomepageComponent implements OnInit, AfterViewChecked {
   posts: Post[] = [];
-  page: number = 1;
   loading: boolean = false;
   hasMorePosts: boolean = true;
   private swiperInstances: Swiper[] = [];
+  private isSwiperInitialized = false;
 
   scrollUpDistance = 2; // Scroll when 2% from top
   scrollDistance = 1;  // Scroll when 1% from bottom
 
-  constructor(private postService: PostService) {}
-  
+  constructor(
+    private postService: PostService,
+    private cdr: ChangeDetectorRef
+  ) {}
+
   ngOnInit(): void {
     this.loadPosts();
   }
 
-  ngAfterViewInit(): void {
-    // If initial posts are already loaded, initialize Swiper
-    this.initializeSwipers();
+  ngAfterViewChecked(): void {
+    if (!this.isSwiperInitialized && this.posts.length > 0) {
+      this.initializeSwipers();
+      this.isSwiperInitialized = true; // Prevent redundant initialization
+    }
   }
 
   loadPosts(): void {
     if (this.loading || !this.hasMorePosts) return;
     this.loading = true;
 
-    this.postService.getPosts(/* ... */).subscribe((newPosts) => {
-      this.posts = [...this.posts, ...newPosts];
+    const lastCreatedAt = this.posts.length > 0
+      ? new Date(this.posts[this.posts.length - 1].createdAt).toISOString()
+      : undefined;
+
+    this.postService.getPosts(lastCreatedAt).subscribe((newPosts) => {
+      const processedPosts = newPosts.map(post => ({
+        ...post,
+        createdAt: new Date(post.createdAt),
+      }));
+
+      this.posts = [...this.posts, ...processedPosts];
+      console.log("this.posts: ", this.posts);
       this.loading = false;
       this.hasMorePosts = newPosts.length > 0;
-      
-      // Re-initialize Swiper after new posts are rendered
-      setTimeout(() => this.initializeSwipers());
+
+      this.isSwiperInitialized = false;  // Reset to trigger re-initialization
+      this.cdr.detectChanges(); // Ensure view updates before swiper initialization
     });
   }
 
   onScroll(): void {
+    console.log("Scroll event activated");
     this.loadPosts();
   }
 
   private initializeSwipers(): void {
-    // Destroy old instances first (to avoid duplicates)
+    // Destroy old instances to prevent duplicates
     this.swiperInstances.forEach(instance => instance.destroy(true, true));
     this.swiperInstances = [];
 
+    // Select and initialize all swiper containers
     const swiperContainers = document.querySelectorAll('.swiper-container');
     swiperContainers.forEach((container) => {
       const swiper = new Swiper(container as HTMLElement, {
         slidesPerView: 1,
         spaceBetween: 10,
-        navigation: true,
+        navigation: {
+          nextEl: '.swiper-button-next',
+          prevEl: '.swiper-button-prev'
+        },
         pagination: { clickable: true },
         loop: true
       });
       this.swiperInstances.push(swiper);
     });
+
+    console.log("Swiper instances initialized:", this.swiperInstances.length);
   }
 }
