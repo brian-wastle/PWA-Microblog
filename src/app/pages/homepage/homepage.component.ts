@@ -59,8 +59,8 @@ export class HomepageComponent implements OnInit, AfterViewChecked {
       this.loading = false;
       this.hasMorePosts = newPosts.length > 0;
 
-      this.isSwiperInitialized = false;  // Reset to trigger re-initialization
-      this.cdr.detectChanges(); // Ensure view updates before swiper initialization
+      this.isSwiperInitialized = false;
+      this.cdr.detectChanges();
     });
   }
 
@@ -70,11 +70,9 @@ export class HomepageComponent implements OnInit, AfterViewChecked {
   }
 
   private initializeSwipers(): void {
-    // Destroy old instances to prevent duplicates
     this.swiperInstances.forEach(instance => instance.destroy(true, true));
     this.swiperInstances = [];
 
-    // Select and initialize all swiper containers
     const swiperContainers = document.querySelectorAll('.swiper-container');
     swiperContainers.forEach((container) => {
       const swiper = new Swiper(container as HTMLElement, {
